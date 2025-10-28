@@ -13,7 +13,7 @@
 
 import gleam/bool
 import gleam/list
-import gleam/option.{type Option, None}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/uri.{type Uri, Uri}
 import lustre
@@ -39,13 +39,13 @@ const relative: Uri = Uri(
 
 pub type Options {
   Options(
-    /// Enable this option if you'd like to trigger your url change handler when
+    /// This option controls if you'd like to trigger your url change handler when
     /// a link to the same domain is clicked. When enabled, internal links will
     /// _always_ update the url shown in the browser's address bar but they _won't_
-    /// trigger a page load.
+    /// trigger a page load. The `init` function enables this option when invoked.
     ///
     handle_internal_links: Bool,
-    /// Enable this option if you'd like to trigger your url change handler even
+    /// This option controls if you'd like to trigger your url change handler even
     /// when the link is to some external domain. You might want to do this for
     /// example to save some state in your app before the user navigates away.
     ///
@@ -78,6 +78,10 @@ pub fn initial_uri() -> Result(Uri, Nil) {
 
 /// Initialise a simple modem that intercepts internal links and sends them to
 /// your update function through the provided handler.
+///
+/// > **Note**: internal links are any links on the same origin as your app. If
+/// > you need to navigate users somewhere else on the same origin you can use
+/// > the [`load`](#load) effect.
 ///
 /// > **Note**: this effect is only meaningful in the browser. When executed in
 /// > a backend JavaScript environment or in Erlang this effect will always be
@@ -139,7 +143,14 @@ pub fn push(
   use _ <- effect.from
   use <- bool.guard(!lustre.is_browser(), Nil)
 
-  do_push(Uri(..relative, path: path, query: query, fragment: fragment))
+  do_push(
+    Uri(
+      ..relative,
+      path: path,
+      query: option.then(query, non_empty),
+      fragment: option.then(fragment, non_empty),
+    ),
+  )
 }
 
 @external(javascript, "./modem.ffi.mjs", "do_push")
@@ -162,7 +173,14 @@ pub fn replace(
   use _ <- effect.from
   use <- bool.guard(!lustre.is_browser(), Nil)
 
-  do_replace(Uri(..relative, path: path, query: query, fragment: fragment))
+  do_replace(
+    Uri(
+      ..relative,
+      path: path,
+      query: option.then(query, non_empty),
+      fragment: option.then(fragment, non_empty),
+    ),
+  )
 }
 
 @external(javascript, "./modem.ffi.mjs", "do_replace")
@@ -272,7 +290,7 @@ pub fn simulate(
   base route: String,
   on_url_change handler: fn(Uri) -> msg,
 ) -> Simulation(model, msg) {
-  result.unwrap_both({
+  let result = {
     use base <- result.try(result.replace_error(
       uri.parse(route),
       lustre_simulate.problem(
@@ -363,5 +381,17 @@ pub fn simulate(
     ))
 
     Ok(lustre_simulate.message(simulation, handler(resolved)))
-  })
+  }
+
+  case result {
+    Ok(simulation) -> simulation
+    Error(problem) -> problem
+  }
+}
+
+fn non_empty(string: String) -> Option(String) {
+  case string {
+    "" -> None
+    _ -> Some(string)
+  }
 }

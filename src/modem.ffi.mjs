@@ -109,7 +109,7 @@ export const do_replace = (uri) => {
 };
 
 export const do_load = (uri) => {
-  window.location = trim_url_separators(to_string(uri));
+  window.location.href = trim_url_separators(to_string(uri));
 };
 
 export const do_forward = (steps) => {
